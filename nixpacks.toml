@@ -1,0 +1,2 @@
+[install]
+apt-get = ["git", "curl"]

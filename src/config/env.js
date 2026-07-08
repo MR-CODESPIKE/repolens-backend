@@ -17,6 +17,6 @@ module.exports = {
     .split(',')
     .map((s) => s.trim()),
   FREE_DAILY_LIMIT: parseInt(process.env.FREE_DAILY_LIMIT || '5', 10),
-  GEMINI_MODEL: process.env.GEMINI_MODEL || 'gemini-2.0-flash-exp',
+  GEMINI_MODEL: process.env.GEMINI_MODEL || 'Gemini 3.1 Flash Lite',
   MAX_REPO_SIZE_MB: parseInt(process.env.MAX_REPO_SIZE_MB || '250', 10),
 };

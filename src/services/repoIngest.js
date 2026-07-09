@@ -60,7 +60,7 @@ function sleep(ms) {
  */
 async function cloneWithRetry(git, githubUrl, tmpDir, attempt = 1) {
   try {
-    await git.clone(githubUrl, tmpDir, ['--depth', '1', '--config', 'credential.helper=']);
+    await git.clone(githubUrl, tmpDir, ['--depth', '1']);
   } catch (err) {
     console.error(`[repoIngest] clone attempt ${attempt} failed. Full error:`, err.message || err);
 
@@ -88,6 +88,7 @@ async function ingestRepo(githubUrl) {
   // "could not read Username" even on plain public repos.
   const git = simpleGit({
     config: ['credential.helper='],
+    allowUnsafeCredentialHelper: true,
   });
   process.env.GIT_TERMINAL_PROMPT = '0';
 

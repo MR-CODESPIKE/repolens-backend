@@ -1,7 +1,6 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const simpleGit = require('simple-git');
 const { nanoid } = require('nanoid');
 const { MAX_REPO_SIZE_MB } = require('../config/env');
 
@@ -45,22 +44,48 @@ function walkDir(dir, baseDir, out = []) {
   return out;
 }
 
+const { execFile } = require('child_process');
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Attempts the clone up to 3 times with a short delay between tries.
- * Shared cloud IPs (Railway, Render, etc.) can occasionally get
- * rate-limited or transiently blocked by GitHub's anonymous git protocol
- * endpoint, which can surface as a misleading "could not read Username"
- * credential error rather than a clear rate-limit message. Retrying with
- * a delay is the practical fix; logging the full raw error lets us confirm
- * whether that's really what's happening.
+ * Clones via a direct `git` child process instead of the simple-git wrapper.
+ * simple-git's built-in safety guard (allowUnsafeCredentialHelper) was
+ * blocking our credential.helper override even when explicitly enabled, so
+ * we bypass the wrapper entirely and control the git invocation directly.
+ * GIT_TERMINAL_PROMPT=0 and -c credential.helper= both ensure git fails
+ * fast instead of hanging/erroring on a phantom credential prompt for what
+ * should be a plain anonymous public-repo clone.
  */
-async function cloneWithRetry(git, githubUrl, tmpDir, attempt = 1) {
+function runClone(githubUrl, tmpDir) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'git',
+      ['-c', 'credential.helper=', 'clone', '--depth', '1', githubUrl, tmpDir],
+      {
+        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+        timeout: 120000,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || error.message));
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+/**
+ * Attempts the clone up to 3 times with a short delay between tries, in
+ * case of transient network issues or shared-IP throttling.
+ */
+async function cloneWithRetry(githubUrl, tmpDir, attempt = 1) {
   try {
-    await git.clone(githubUrl, tmpDir, ['--depth', '1']);
+    await runClone(githubUrl, tmpDir);
   } catch (err) {
     console.error(`[repoIngest] clone attempt ${attempt} failed. Full error:`, err.message || err);
 
@@ -68,7 +93,7 @@ async function cloneWithRetry(git, githubUrl, tmpDir, attempt = 1) {
       const delay = attempt * 3000;
       console.warn(`[repoIngest] retrying clone in ${delay}ms (attempt ${attempt + 1}/3)`);
       await sleep(delay);
-      return cloneWithRetry(git, githubUrl, tmpDir, attempt + 1);
+      return cloneWithRetry(githubUrl, tmpDir, attempt + 1);
     }
     throw new Error(`Failed to clone repo after 3 attempts. Last error: ${err.message || err}`);
   }
@@ -81,18 +106,8 @@ async function cloneWithRetry(git, githubUrl, tmpDir, attempt = 1) {
  */
 async function ingestRepo(githubUrl) {
   const tmpDir = path.join(os.tmpdir(), `repolens-${nanoid(10)}`);
-  fs.mkdirSync(tmpDir, { recursive: true });
 
-  // Force git to never attempt interactive credential prompts - containers
-  // have no terminal to prompt in, so without this git can fail with
-  // "could not read Username" even on plain public repos.
-  const git = simpleGit({
-    config: ['credential.helper='],
-    allowUnsafeCredentialHelper: true,
-  });
-  process.env.GIT_TERMINAL_PROMPT = '0';
-
-  await cloneWithRetry(git, githubUrl, tmpDir);
+  await cloneWithRetry(githubUrl, tmpDir);
 
   const dirSizeMB = getDirSizeMB(tmpDir);
   if (dirSizeMB > MAX_REPO_SIZE_MB) {

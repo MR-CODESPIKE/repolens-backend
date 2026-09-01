@@ -72,3 +72,8 @@ diff logic and force a full re-scan regardless of snapshot state.
   time reasonable on a small Render instance.
 - Security findings are intentionally framed as "worth a human review," not
   definitive backdoor detection — no single LLM pass can reliably guarantee that.
+
+## Ownership
+
+- **Owner:** Abdulkadir umar
+- **Hugging Face:** [MR-CODESPIKE](https://huggingface.co/MR-CODESPIKE)
